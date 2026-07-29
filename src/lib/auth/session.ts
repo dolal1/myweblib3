@@ -129,23 +129,53 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     return null;
   }
 
-  // Sliding expiry, but only past the halfway mark so we are not writing to the
-  // database on every single request.
-  if (session.expiresAt.getTime() - Date.now() < RENEW_AFTER_MS) {
-    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-    await db.session
-      .update({ where: { id: session.id }, data: { expiresAt } })
-      .catch(() => {});
-    cookieStore.set(SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "lax",
-      expires: expiresAt,
-      path: "/",
-    });
-  }
-
   return session.user;
+}
+
+/**
+ * Extends the current session's lifetime.
+ *
+ * **Must only be called from a Server Action or Route Handler.** Next.js
+ * forbids writing cookies while rendering, and getSessionUser() runs on the
+ * render path, so sliding renewal cannot live there. An earlier version of this
+ * file tried, and every request made with a session past its half-life threw
+ * "Cookies can only be modified in a Server Action or Route Handler".
+ *
+ * Two consequences worth being explicit about:
+ *
+ *   - Sessions have an absolute 14-day lifetime unless something calls this.
+ *     That is a defensible default on its own — an absolute cap bounds how long
+ *     a stolen token stays useful.
+ *   - Renewal is therefore opt-in at the call site, where the context is known
+ *     to permit a cookie write.
+ */
+export async function touchSession(): Promise<void> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!token) return;
+
+  const sessionId = hashToken(token);
+  const session = await db.session.findUnique({
+    where: { id: sessionId },
+    select: { id: true, expiresAt: true },
+  });
+
+  if (!session) return;
+  if (session.expiresAt.getTime() <= Date.now()) return;
+
+  // Only past the halfway mark, so this is not a write on every request.
+  if (session.expiresAt.getTime() - Date.now() >= RENEW_AFTER_MS) return;
+
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  await db.session.update({ where: { id: session.id }, data: { expiresAt } });
+
+  cookieStore.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: "lax",
+    expires: expiresAt,
+    path: "/",
+  });
 }
 
 /** Logs out the current browser only, leaving the user's other sessions alone. */

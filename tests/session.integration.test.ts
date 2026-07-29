@@ -17,15 +17,51 @@ interface StoredCookie {
 
 const jar = new Map<string, StoredCookie>();
 
+/**
+ * Next.js refuses cookie writes outside a Server Action or Route Handler. The
+ * mock enforces that rule rather than accepting every write, because a
+ * permissive Map is what let a real bug through: `getSessionUser` used to renew
+ * the cookie inline, which threw "Cookies can only be modified in a Server
+ * Action or Route Handler" on every request made with a session past its
+ * half-life. The test suite was green the whole time.
+ *
+ * A double that is more permissive than the real thing does not test the thing.
+ */
+let cookieWritesAllowed = false;
+
+function allowCookieWrites<T>(fn: () => Promise<T>): Promise<T> {
+  cookieWritesAllowed = true;
+  return fn().finally(() => {
+    cookieWritesAllowed = false;
+  });
+}
+
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: (name: string) => {
       const entry = jar.get(name);
       return entry ? { name, value: entry.value } : undefined;
     },
-    set: (name: string, value: string, options: Record<string, unknown> = {}) =>
-      jar.set(name, { value, options }),
-    delete: (name: string) => jar.delete(name),
+    set: (
+      name: string,
+      value: string,
+      options: Record<string, unknown> = {},
+    ) => {
+      if (!cookieWritesAllowed) {
+        throw new Error(
+          "Cookies can only be modified in a Server Action or Route Handler.",
+        );
+      }
+      jar.set(name, { value, options });
+    },
+    delete: (name: string) => {
+      if (!cookieWritesAllowed) {
+        throw new Error(
+          "Cookies can only be modified in a Server Action or Route Handler.",
+        );
+      }
+      jar.delete(name);
+    },
   }),
 }));
 
@@ -38,6 +74,7 @@ const {
   getSessionUser,
   pruneExpiredSessions,
   rotateSession,
+  touchSession,
 } = await import("@/lib/auth/session");
 
 const TEST_EMAIL = "session-test@myweblib.test";
@@ -64,10 +101,75 @@ afterAll(async () => {
   await db.$disconnect();
 });
 
+describe("cookie writes on the render path", () => {
+  /**
+   * Regression tests. getSessionUser() runs while rendering Server Components,
+   * where Next.js forbids cookie writes. An earlier version renewed the cookie
+   * inline and 500'd every request carrying a session past its half-life.
+   */
+  it("never writes a cookie, even for a session due for renewal", async () => {
+    const user = await makeUser();
+    await allowCookieWrites(() => createSession(user.id));
+
+    // Force the session close to expiry, which is what triggered the old
+    // renewal branch.
+    await db.session.updateMany({
+      where: { userId: user.id },
+      data: { expiresAt: new Date(Date.now() + 60_000) },
+    });
+
+    // Writes are disallowed here, so this throws if anything tries to set().
+    await expect(getSessionUser()).resolves.not.toBeNull();
+  });
+
+  it("does not write a cookie when reaping an expired session", async () => {
+    const user = await makeUser();
+    await allowCookieWrites(() => createSession(user.id));
+    await db.session.updateMany({
+      where: { userId: user.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    // Deleting the row is fine; clearing the cookie would not be.
+    await expect(getSessionUser()).resolves.toBeNull();
+  });
+
+  it("touchSession extends a session close to expiry", async () => {
+    const user = await makeUser();
+    await allowCookieWrites(() => createSession(user.id));
+
+    const soon = new Date(Date.now() + 60_000);
+    await db.session.updateMany({
+      where: { userId: user.id },
+      data: { expiresAt: soon },
+    });
+
+    await allowCookieWrites(() => touchSession());
+
+    const row = await db.session.findFirst({ where: { userId: user.id } });
+    expect(row!.expiresAt.getTime()).toBeGreaterThan(soon.getTime());
+  });
+
+  it("touchSession leaves a fresh session alone", async () => {
+    const user = await makeUser();
+    await allowCookieWrites(() => createSession(user.id));
+    const before = (await db.session.findFirst({
+      where: { userId: user.id },
+    }))!.expiresAt;
+
+    await allowCookieWrites(() => touchSession());
+
+    const after = (await db.session.findFirst({ where: { userId: user.id } }))!
+      .expiresAt;
+    // Well inside the renewal threshold, so nothing should change.
+    expect(after.getTime()).toBe(before.getTime());
+  });
+});
+
 describe("session lifecycle", () => {
   it("creates a session and resolves the user from the cookie", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
 
     const resolved = await getSessionUser();
     expect(resolved?.id).toBe(user.id);
@@ -76,7 +178,7 @@ describe("session lifecycle", () => {
 
   it("never stores the raw token in the database", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
 
     const token = jar.get(SESSION_COOKIE)?.value;
     expect(token).toBeTruthy();
@@ -91,7 +193,7 @@ describe("session lifecycle", () => {
 
   it("sets the cookie with the flags that matter", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
 
     const options = jar.get(SESSION_COOKIE)?.options;
     expect(options?.["httpOnly"]).toBe(true);
@@ -115,7 +217,7 @@ describe("session lifecycle", () => {
 
   it("rejects an expired session and deletes the row", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
 
     await db.session.updateMany({
       where: { userId: user.id },
@@ -130,8 +232,8 @@ describe("session lifecycle", () => {
 
   it("destroys the current session and clears the cookie", async () => {
     const user = await makeUser();
-    await createSession(user.id);
-    await destroySession();
+    await allowCookieWrites(() => createSession(user.id));
+    await allowCookieWrites(() => destroySession());
 
     expect(jar.has(SESSION_COOKIE)).toBe(false);
     await expect(
@@ -142,13 +244,13 @@ describe("session lifecycle", () => {
 
   it("rotates to a brand new token, invalidating the old one", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
     const before = jar.get(SESSION_COOKIE)?.value;
     const beforeId = (await db.session.findFirst({
       where: { userId: user.id },
     }))!.id;
 
-    await rotateSession(user.id);
+    await allowCookieWrites(() => rotateSession(user.id));
     const after = jar.get(SESSION_COOKIE)?.value;
 
     expect(after).not.toBe(before);
@@ -162,11 +264,11 @@ describe("session lifecycle", () => {
 
   it("revokes every session for a user", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
     jar.clear();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
     jar.clear();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
 
     await expect(
       db.session.count({ where: { userId: user.id } }),
@@ -179,7 +281,7 @@ describe("session lifecycle", () => {
 
   it("prunes expired sessions and leaves live ones alone", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
     const liveId = (await db.session.findFirst({ where: { userId: user.id } }))!
       .id;
 
@@ -200,7 +302,7 @@ describe("session lifecycle", () => {
 
   it("cascades session deletion when the user is deleted", async () => {
     const user = await makeUser();
-    await createSession(user.id);
+    await allowCookieWrites(() => createSession(user.id));
 
     await db.user.delete({ where: { id: user.id } });
 

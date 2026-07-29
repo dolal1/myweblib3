@@ -110,7 +110,8 @@ Under construction.
 - [x] Foundation — Next 16, TS strict, Prisma 7, Docker Postgres, validated env
 - [x] Data model — schema, migrations, hand-written constraints, seed
 - [x] Authentication — Argon2id, database sessions, rate limiting, role DAL
-- [ ] Catalogue CRUD
+- [x] Catalogue — book and author CRUD, multi-author credits, ISBN validation,
+      search, pagination
 - [ ] Circulation
 - [ ] Search and ISBN lookup
 - [ ] Notifications and reporting
