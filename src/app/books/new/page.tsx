@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { createBook } from "@/app/actions/books";
-import { BookForm } from "@/components/book-form";
+import { IsbnLookup } from "@/components/isbn-lookup";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth/dal";
 import { getBookFormOptions } from "@/lib/catalogue/queries";
@@ -34,13 +34,7 @@ export default async function NewBookPage() {
   return (
     <main className="mx-auto max-w-xl px-6 py-12">
       <PageHeader title="Add book" />
-      <BookForm
-        action={createBook}
-        authors={authors}
-        genres={genres}
-        submitLabel="Create book"
-        cancelHref="/books"
-      />
+      <IsbnLookup createAction={createBook} authors={authors} genres={genres} />
     </main>
   );
 }

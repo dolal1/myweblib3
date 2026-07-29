@@ -9,9 +9,45 @@ import {
   SearchForm,
 } from "@/components/ui";
 import { getCurrentUser, hasRole } from "@/lib/auth/dal";
-import { listBooks } from "@/lib/catalogue/queries";
+import { PAGE_SIZE, listBooks } from "@/lib/catalogue/queries";
+import { hydrateBookHits, searchBooks } from "@/lib/catalogue/search";
 
 export const metadata: Metadata = { title: "Books" };
+
+/**
+ * Browsing and searching are two different queries.
+ *
+ * With no `q`, this is an alphabetical listing and Prisma handles it. With a
+ * `q`, it becomes ranked full-text search over the generated tsvector columns,
+ * which needs raw SQL — so the two paths are kept separate rather than bent
+ * into one query that does neither well.
+ */
+async function loadBooks(page: number, query: string) {
+  if (!query) {
+    const listed = await listBooks({ page });
+    return {
+      items: listed.items.map((item) => ({ ...item, matchedOn: null })),
+      page: listed.page,
+      pageCount: listed.pageCount,
+      total: listed.total,
+      fuzzy: false,
+    };
+  }
+
+  const result = await searchBooks({
+    query,
+    limit: PAGE_SIZE,
+    offset: (Math.max(1, page) - 1) * PAGE_SIZE,
+  });
+
+  return {
+    items: await hydrateBookHits(result.hits),
+    page,
+    pageCount: Math.max(1, Math.ceil(result.total / PAGE_SIZE)),
+    total: result.total,
+    fuzzy: result.usedFuzzyFallback,
+  };
+}
 
 export default async function BooksPage({
   searchParams,
@@ -24,7 +60,7 @@ export default async function BooksPage({
 
   const [user, books] = await Promise.all([
     getCurrentUser(),
-    listBooks({ page, ...(query ? { query } : {}) }),
+    loadBooks(page, query),
   ]);
 
   const canManage = hasRole(user, "LIBRARIAN");
@@ -42,8 +78,19 @@ export default async function BooksPage({
       <SearchForm
         action="/books"
         defaultValue={query}
-        placeholder="Search by title or author"
+        placeholder="Search by title, author, or description"
       />
+
+      {query ? (
+        <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+          {books.fuzzy
+            ? `Nothing matched “${query}” exactly — showing titles that look similar.`
+            : `${books.total} ${books.total === 1 ? "result" : "results"} for “${query}”, best first.`}{" "}
+          <span className="text-xs">
+            Quoted phrases and <code>-exclusions</code> work.
+          </span>
+        </p>
+      ) : null}
 
       {books.items.length === 0 ? (
         <EmptyState>

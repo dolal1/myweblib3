@@ -113,6 +113,7 @@ Under construction.
 - [x] Catalogue — book and author CRUD, multi-author credits, ISBN validation,
       search, pagination
 - [x] Circulation — checkout, return, renew, hold queues, overdue fines
-- [ ] Search and ISBN lookup
+- [x] Search and ISBN lookup — ranked full-text with typo fallback, Open
+      Library metadata
 - [ ] Notifications and reporting
 - [ ] Tests, CI, deploy
