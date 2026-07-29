@@ -1,10 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    "target": "ES2022",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
-    "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",
@@ -13,6 +12,26 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+
+    // --- Strictness -------------------------------------------------------
+    // `strict` alone would not have caught most of what went wrong in v2.
+    // The additions below are the ones that pay for themselves:
+    //
+    //   noUncheckedIndexedAccess  — v2's `books[0].title` style access on a
+    //     possibly-empty result is exactly how its pages blew up.
+    //   exactOptionalPropertyTypes — stops `{ returnedAt: undefined }` being
+    //     silently accepted where the field means "not yet returned".
+    //   noImplicitOverride / noFallthroughCasesInSwitch — cheap, and circulation
+    //     logic is full of switches over status enums.
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true,
+
     "plugins": [
       {
         "name": "next"
@@ -30,5 +49,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src/generated"]
 }

@@ -1,0 +1,355 @@
+// myweblib3 data model.
+//
+// The shape here is a deliberate response to myweblib2's Mongoose schemas —
+// see docs/from-v2.md and docs/adr/004-schema.md. The three structural changes:
+//
+//   1. Book <-> Author is many-to-many. v2's `Book.author` was a single
+//      ObjectId, so a co-authored book was not representable.
+//   2. BookCopy exists. v2 conflated the catalogue record with the lendable
+//      object, which made circulation impossible to build.
+//   3. Referential integrity is declared here and enforced by Postgres. v2
+//      approximated it with a `pre('remove')` hook whose error the delete
+//      route then swallowed.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [pg_trgm]
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  MEMBER
+  LIBRARIAN
+  ADMIN
+}
+
+model User {
+  id String @id @default(uuid(7))
+
+  // Stored lowercased and trimmed by normalizeEmail() so the unique index is
+  // genuinely case-insensitive without depending on the citext extension.
+  // v2 had no unique index at all: two registrations racing produced two
+  // accounts with the same address.
+  email        String   @unique
+  passwordHash String
+  name         String
+  // v2 declared this field, defaulted it to 'Librarian', and never once read
+  // it. Here it is enforced on every mutation.
+  role         UserRole @default(MEMBER)
+
+  // Circulation privileges can be suspended without deleting the account.
+  suspended Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions      Session[]
+  loans         Loan[]         @relation("LoanMember")
+  loansIssued   Loan[]         @relation("LoanIssuedBy")
+  holds         Hold[]
+  notifications Notification[]
+
+  @@index([role])
+}
+
+model Session {
+  // The session id is the SHA-256 of the token handed to the browser, so a
+  // database leak does not hand out usable session cookies.
+  id String @id
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  ipAddress String?
+  userAgent String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+model Author {
+  id        String   @id @default(uuid(7))
+  name      String   @unique
+  sortName  String
+  bio       String?
+  birthYear Int?
+  deathYear Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  books BookAuthor[]
+
+  // See the note on Book.searchVector.
+  searchVector Unsupported("tsvector")? @default(dbgenerated())
+
+  @@index([sortName])
+  @@index([searchVector], type: Gin)
+}
+
+enum ContributionRole {
+  AUTHOR
+  EDITOR
+  TRANSLATOR
+  ILLUSTRATOR
+}
+
+// Explicit join table: the relationship carries its own data (which kind of
+// contribution, and the order names are credited in), so an implicit m-n
+// relation would not be enough.
+model BookAuthor {
+  bookId   String
+  book     Book             @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  authorId String
+  // Restrict is the whole point: Postgres refuses to delete an author who is
+  // still credited on a book. v2 tried to do this in a Mongoose hook.
+  author   Author           @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  role     ContributionRole @default(AUTHOR)
+  position Int              @default(0)
+
+  @@id([bookId, authorId, role])
+  @@index([authorId])
+  @@index([bookId])
+}
+
+model Genre {
+  id    String @id @default(uuid(7))
+  name  String @unique
+  slug  String @unique
+  books Book[]
+}
+
+model Book {
+  id String @id @default(uuid(7))
+
+  title    String
+  subtitle String?
+  // ISBN-13, digits only, validated and normalised on the way in.
+  isbn13   String? @unique
+
+  description String?
+  publisher   String?
+  publishedOn DateTime?
+  // v2 wrote `pageCount` from its routes and read it in its views, but never
+  // added it to the schema, so Mongoose silently dropped it on every save.
+  pageCount   Int?
+  language    String    @default("en")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authors BookAuthor[]
+  genres  Genre[]
+  copies  BookCopy[]
+  holds   Hold[]
+  cover   Cover?
+
+  // Generated tsvector maintained by Postgres (see the
+  // constraints_and_search migration). Declared here so Prisma does not report
+  // the column as drift; it is never read or written through the client, only
+  // through the raw search query in src/lib/catalogue/search.ts.
+  searchVector Unsupported("tsvector")? @default(dbgenerated())
+
+  @@index([title])
+  @@index([publishedOn])
+  @@index([searchVector], type: Gin)
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, name: "Book_title_trgm_idx")
+}
+
+// One row per physical object on a shelf. This is the entity v2 lacked
+// entirely, and everything in Circulation below hangs off it.
+enum CopyStatus {
+  AVAILABLE
+  ON_LOAN
+  HOLD_SHELF
+  LOST
+  WITHDRAWN
+}
+
+enum CopyCondition {
+  NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+model BookCopy {
+  id String @id @default(uuid(7))
+
+  // What gets scanned at the desk.
+  barcode String @unique
+
+  bookId String
+  // A book with copies on the shelf cannot be deleted out from under them.
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Restrict)
+
+  status        CopyStatus    @default(AVAILABLE)
+  condition     CopyCondition @default(GOOD)
+  shelfLocation String?
+  acquiredOn    DateTime      @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loans Loan[]
+
+  @@index([bookId])
+  @@index([status])
+}
+
+model Cover {
+  id String @id @default(uuid(7))
+
+  bookId String @unique
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // The image bytes live in blob storage, not in this row. v2 stored raw
+  // Buffers in the document and base64-inlined them into the HTML on every
+  // render, which made every page uncacheable and enormous.
+  storageKey String
+  mimeType   String
+  width      Int
+  height     Int
+  byteSize   Int
+  checksum   String
+
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Circulation
+// ---------------------------------------------------------------------------
+
+model Loan {
+  id String @id @default(uuid(7))
+
+  copyId String
+  copy   BookCopy @relation(fields: [copyId], references: [id], onDelete: Restrict)
+
+  memberId String
+  member   User   @relation("LoanMember", fields: [memberId], references: [id], onDelete: Restrict)
+
+  // Which staff member issued it, for audit. Null for seeded history.
+  issuedById String?
+  issuedBy   User?   @relation("LoanIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+
+  checkedOutAt DateTime  @default(now())
+  dueAt        DateTime
+  returnedAt   DateTime?
+  renewalCount Int       @default(0)
+
+  fines Fine[]
+
+  // A partial unique index enforcing "at most one open loan per copy" is added
+  // by hand in the migration — Prisma cannot express a WHERE clause on an
+  // index. That constraint is what makes concurrent checkout of the same copy
+  // impossible rather than merely unlikely.
+  @@index([copyId])
+  @@index([memberId])
+  @@index([dueAt])
+  @@index([returnedAt])
+}
+
+enum HoldStatus {
+  WAITING
+  READY
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
+model Hold {
+  id String @id @default(uuid(7))
+
+  // Holds are placed on the title, not a specific copy — whichever copy comes
+  // back first satisfies the front of the queue.
+  bookId String
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   User   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  status   HoldStatus @default(WAITING)
+  placedAt DateTime   @default(now())
+
+  // Set when a copy is assigned; the member has until expiresAt to collect.
+  readyAt   DateTime?
+  expiresAt DateTime?
+
+  // Queue position is derived from placedAt ordering rather than stored, so it
+  // cannot drift out of sync when a hold is cancelled.
+  @@index([bookId, status, placedAt])
+  @@index([memberId])
+}
+
+enum FineReason {
+  OVERDUE
+  DAMAGE
+  LOST
+}
+
+model Fine {
+  id String @id @default(uuid(7))
+
+  loanId String
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  // Integer cents. Never a float — 0.1 + 0.2 has no business anywhere near
+  // someone's account balance.
+  amountCents Int
+  reason      FineReason @default(OVERDUE)
+
+  assessedAt DateTime  @default(now())
+  paidAt     DateTime?
+  waivedAt   DateTime?
+
+  @@index([loanId])
+  @@index([paidAt])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+enum NotificationKind {
+  DUE_SOON
+  OVERDUE
+  HOLD_READY
+}
+
+model Notification {
+  id String @id @default(uuid(7))
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind NotificationKind
+
+  // Makes the overdue job idempotent: re-running it for the same loan on the
+  // same day collides on this unique key instead of emailing twice.
+  dedupeKey String @unique
+
+  subject String
+  body    String
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@index([userId])
+  @@index([sentAt])
+}
