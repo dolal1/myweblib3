@@ -77,6 +77,21 @@ fine, a returned loan, a book with no ISBN and no cover, and a suspended member
 | `npm run db:seed`           | reseed                     |
 | `npm run db:studio`         | Prisma Studio              |
 
+### The daily job
+
+Overdue notices, due-soon reminders, hold expiry, and session pruning run from
+one endpoint:
+
+```bash
+curl -X POST http://localhost:3000/api/jobs/daily \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+It is idempotent — a re-run collides on the `dedupeKey` unique index rather than
+notifying twice — and it is the one endpoint in the app that needs its own auth,
+because route handlers get none of the `Origin` checking Next.js applies to
+Server Actions.
+
 ## Architecture notes
 
 Decisions are recorded in [docs/adr/](docs/adr/):
@@ -115,5 +130,5 @@ Under construction.
 - [x] Circulation — checkout, return, renew, hold queues, overdue fines
 - [x] Search and ISBN lookup — ranked full-text with typo fallback, Open
       Library metadata
-- [ ] Notifications and reporting
+- [x] Notifications and reporting — idempotent daily job, admin dashboard
 - [ ] Tests, CI, deploy

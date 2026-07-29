@@ -41,6 +41,11 @@ export async function Nav() {
             Desk
           </Link>
         ) : null}
+        {hasRole(user, "ADMIN") ? (
+          <Link href="/admin" className="hover:underline">
+            Reports
+          </Link>
+        ) : null}
 
         <div className="ml-auto flex items-center gap-4">
           {isStaff ? (
