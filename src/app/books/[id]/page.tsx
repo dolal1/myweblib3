@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { placeHoldAction } from "@/app/actions/circulation";
+import { Cover } from "@/components/cover";
+import { CoverUpload } from "@/components/cover-upload";
 import { ActionButton } from "@/components/desk-form";
 import { PageHeader } from "@/components/ui";
 import { getCurrentUser, hasRole } from "@/lib/auth/dal";
@@ -75,28 +77,34 @@ export default async function BookPage({
         </Link>
       </p>
 
-      <p className="mt-6 text-slate-700 dark:text-slate-300">
-        {book.authors.map((link, index) => (
-          <span key={`${link.author.id}-${link.role}`}>
-            {index > 0 ? ", " : ""}
-            <Link href={`/authors/${link.author.id}`} className="underline">
-              {link.author.name}
-            </Link>
-            {link.role !== "AUTHOR" ? (
-              <span className="text-slate-500">
-                {" "}
-                ({link.role.toLowerCase()})
-              </span>
-            ) : null}
-          </span>
-        ))}
-      </p>
+      <div className="mt-6 flex gap-6">
+        <Cover cover={book.cover} title={book.title} size="large" />
 
-      {book.description ? (
-        <p className="mt-6 whitespace-pre-line text-slate-700 dark:text-slate-300">
-          {book.description}
-        </p>
-      ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="text-slate-700 dark:text-slate-300">
+            {book.authors.map((link, index) => (
+              <span key={`${link.author.id}-${link.role}`}>
+                {index > 0 ? ", " : ""}
+                <Link href={`/authors/${link.author.id}`} className="underline">
+                  {link.author.name}
+                </Link>
+                {link.role !== "AUTHOR" ? (
+                  <span className="text-slate-500">
+                    {" "}
+                    ({link.role.toLowerCase()})
+                  </span>
+                ) : null}
+              </span>
+            ))}
+          </p>
+
+          {book.description ? (
+            <p className="mt-4 whitespace-pre-line text-slate-700 dark:text-slate-300">
+              {book.description}
+            </p>
+          ) : null}
+        </div>
+      </div>
 
       <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
         <Detail label="Published">
@@ -180,6 +188,20 @@ export default async function BookPage({
           </tbody>
         </table>
       )}
+
+      {canManage ? (
+        <section className="mt-12 border-t border-slate-200 pt-6 dark:border-slate-800">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Cover image
+          </h2>
+          <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+            Stored outside the database and served from its own immutable URL.
+            v2 kept the bytes in the document and base64-inlined them into every
+            page render.
+          </p>
+          <CoverUpload bookId={book.id} hasCover={book.cover !== null} />
+        </section>
+      ) : null}
     </main>
   );
 }

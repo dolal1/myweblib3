@@ -17,6 +17,20 @@ const nextConfig: NextConfig = {
      * radius is the two calls in dal.ts.
      */
     authInterrupts: true,
+
+    serverActions: {
+      /**
+       * Server Actions cap request bodies at 1 MB by default. Cover uploads are
+       * allowed up to 8 MB (MAX_UPLOAD_BYTES in lib/covers/service.ts), and
+       * without raising this the framework rejects an ordinary phone photo
+       * before any of our validation runs.
+       *
+       * The limit is still enforced twice inside the action — once on
+       * `file.size` before reading, once in processCoverBytes — because a
+       * framework limit is a convenience, not the boundary.
+       */
+      bodySizeLimit: "8mb",
+    },
   },
 };
 

@@ -195,6 +195,7 @@ export async function hydrateBookHits(hits: SearchHit[]) {
         select: { author: { select: { name: true } } },
       },
       copies: { select: { status: true } },
+      cover: { select: { storageKey: true, width: true, height: true } },
     },
   });
 
@@ -213,6 +214,7 @@ export async function hydrateBookHits(hits: SearchHit[]) {
         copyCount: book.copies.length,
         availableCount: book.copies.filter((c) => c.status === "AVAILABLE")
           .length,
+        cover: book.cover,
         matchedOn: hit.matchedOn,
       },
     ];

@@ -131,4 +131,5 @@ Under construction.
 - [x] Search and ISBN lookup — ranked full-text with typo fallback, Open
       Library metadata
 - [x] Notifications and reporting — idempotent daily job, admin dashboard
+- [x] Cover images — real uploads, content-addressed storage, immutable URLs
 - [ ] Tests, CI, deploy

@@ -124,6 +124,7 @@ export async function listBooks({
     authors: string[];
     copyCount: number;
     availableCount: number;
+    cover: { storageKey: string; width: number; height: number } | null;
   }>
 > {
   const trimmed = query?.trim();
@@ -158,6 +159,7 @@ export async function listBooks({
           select: { author: { select: { name: true } } },
         },
         copies: { select: { status: true } },
+        cover: { select: { storageKey: true, width: true, height: true } },
       },
     }),
     db.book.count({ where }),
@@ -173,6 +175,7 @@ export async function listBooks({
       copyCount: book.copies.length,
       availableCount: book.copies.filter((c) => c.status === "AVAILABLE")
         .length,
+      cover: book.cover,
     })),
     page,
     pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
@@ -198,6 +201,7 @@ export async function getBook(id: string) {
         select: { role: true, author: { select: { id: true, name: true } } },
       },
       genres: { select: { id: true, name: true, slug: true } },
+      cover: { select: { storageKey: true, width: true, height: true } },
       copies: {
         orderBy: { barcode: "asc" },
         select: {

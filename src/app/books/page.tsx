@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { Cover } from "@/components/cover";
+
 import {
   ButtonLink,
   EmptyState,
@@ -99,8 +101,11 @@ export default async function BooksPage({
       ) : (
         <ul className="divide-y divide-slate-200 dark:divide-slate-800">
           {books.items.map((book) => (
-            <li key={book.id} className="flex justify-between gap-4 py-4">
-              <div className="min-w-0">
+            <li key={book.id} className="flex gap-4 py-4">
+              <Link href={`/books/${book.id}`} className="shrink-0">
+                <Cover cover={book.cover} title={book.title} size="small" />
+              </Link>
+              <div className="min-w-0 flex-1">
                 <Link
                   href={`/books/${book.id}`}
                   className="font-medium underline"
@@ -124,7 +129,7 @@ export default async function BooksPage({
                 </p>
               </div>
 
-              <div className="shrink-0 text-right text-sm">
+              <div className="shrink-0 self-center text-right text-sm">
                 <Availability
                   available={book.availableCount}
                   total={book.copyCount}
