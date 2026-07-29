@@ -112,7 +112,7 @@ Under construction.
 - [x] Authentication — Argon2id, database sessions, rate limiting, role DAL
 - [x] Catalogue — book and author CRUD, multi-author credits, ISBN validation,
       search, pagination
-- [ ] Circulation
+- [x] Circulation — checkout, return, renew, hold queues, overdue fines
 - [ ] Search and ISBN lookup
 - [ ] Notifications and reporting
 - [ ] Tests, CI, deploy

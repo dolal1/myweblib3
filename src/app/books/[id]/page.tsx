@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { placeHoldAction } from "@/app/actions/circulation";
+import { ActionButton } from "@/components/desk-form";
 import { PageHeader } from "@/components/ui";
 import { getCurrentUser, hasRole } from "@/lib/auth/dal";
 import { formatIsbn13 } from "@/lib/catalogue/isbn";
@@ -43,14 +45,27 @@ export default async function BookPage({
         title={book.title}
         {...(book.subtitle ? { subtitle: book.subtitle } : {})}
         action={
-          canManage ? (
-            <Link
-              href={`/books/${book.id}/edit`}
-              className="inline-block rounded-md border border-slate-300 px-3 py-2 text-sm font-medium dark:border-slate-700"
-            >
-              Edit
-            </Link>
-          ) : null
+          <div className="flex items-start gap-2">
+            {/* A hold is only useful when nothing is on the shelf, and only
+                offered to a member in good standing. */}
+            {user && !user.suspended && available === 0 ? (
+              <ActionButton
+                action={placeHoldAction}
+                name="bookId"
+                value={book.id}
+                label="Place hold"
+                variant="primary"
+              />
+            ) : null}
+            {canManage ? (
+              <Link
+                href={`/books/${book.id}/edit`}
+                className="inline-block rounded-md border border-slate-300 px-3 py-2 text-sm font-medium dark:border-slate-700"
+              >
+                Edit
+              </Link>
+            ) : null}
+          </div>
         }
       />
 

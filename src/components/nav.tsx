@@ -31,6 +31,17 @@ export async function Nav() {
           Authors
         </Link>
 
+        {user ? (
+          <Link href="/account" className="hover:underline">
+            My account
+          </Link>
+        ) : null}
+        {isStaff ? (
+          <Link href="/desk" className="hover:underline">
+            Desk
+          </Link>
+        ) : null}
+
         <div className="ml-auto flex items-center gap-4">
           {isStaff ? (
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600 uppercase dark:bg-slate-800 dark:text-slate-300">
