@@ -12,15 +12,15 @@ is shaped the way it is.
 
 ## Stack
 
-|           |                                                              |
-| --------- | ------------------------------------------------------------ |
-| Runtime   | Node 24                                                      |
-| Framework | Next.js 16 (App Router, Server Components, Server Actions)   |
-| Language  | TypeScript, `strict` plus `noUncheckedIndexedAccess`         |
-| Database  | PostgreSQL 18                                                |
-| ORM       | Prisma 7 (driver adapters)                                   |
-| Styling   | Tailwind CSS 4                                               |
-| Auth      | Hand-rolled: Argon2id, database-backed sessions, CSRF tokens |
+|           |                                                            |
+| --------- | ---------------------------------------------------------- |
+| Runtime   | Node 24                                                    |
+| Framework | Next.js 16 (App Router, Server Components, Server Actions) |
+| Language  | TypeScript, `strict` plus `noUncheckedIndexedAccess`       |
+| Database  | PostgreSQL 18                                              |
+| ORM       | Prisma 7 (driver adapters)                                 |
+| Styling   | Tailwind CSS 4                                             |
+| Auth      | Hand-rolled: Argon2id, database-backed sessions            |
 
 ## Getting started
 
@@ -42,7 +42,7 @@ npm run db:seed      # realistic demo library
 npm run dev
 ```
 
-Then open http://localhost:3000. `GET /api/health` round-trips to Postgres and
+Then open <http://localhost:3000>. `GET /api/health` round-trips to Postgres and
 returns 503 if the database is unreachable.
 
 ### Demo accounts
@@ -109,7 +109,7 @@ Under construction.
 
 - [x] Foundation — Next 16, TS strict, Prisma 7, Docker Postgres, validated env
 - [x] Data model — schema, migrations, hand-written constraints, seed
-- [ ] Authentication
+- [x] Authentication — Argon2id, database sessions, rate limiting, role DAL
 - [ ] Catalogue CRUD
 - [ ] Circulation
 - [ ] Search and ISBN lookup

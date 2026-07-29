@@ -20,8 +20,20 @@ authentication is the area where v2 failed hardest.
 
 ## Decision
 
-Implement session authentication directly: Argon2id password hashing,
-database-backed sessions, and CSRF tokens.
+Implement session authentication directly: Argon2id password hashing and
+database-backed sessions.
+
+**Not CSRF tokens, though — that part of the plan was wrong.** Next.js compares
+`Origin` against `Host` on every Server Action and rejects mismatches, so a
+hand-rolled double-submit token for actions would be ceremony that protects
+nothing already protected. Tokens become necessary only for route handlers,
+which get no such treatment; there are none that mutate state yet, and when
+there are, they will need an explicit origin check.
+
+This is worth recording precisely because the instinct — "v2 had no CSRF
+protection, so build CSRF protection" — produces redundant code when the
+framework has moved on. The real lesson from v2 is to know where the boundary
+is, not to reimplement it.
 
 ## Consequences
 
@@ -33,8 +45,10 @@ database-backed sessions, and CSRF tokens.
   the database stores only its SHA-256. A leaked database dump therefore does
   not contain usable session cookies. Sessions can be listed and revoked, which
   a signed stateless cookie cannot do.
-- **Cookie flags** are set explicitly: `httpOnly`, `secure`, `sameSite=lax`, an
-  explicit `maxAge`, and `path=/`.
+- **Cookie flags** are set explicitly: `httpOnly`, `secure` in production,
+  `sameSite=lax`, an explicit expiry, and `path=/`. `sameSite=lax` is itself a
+  second layer of cross-site POST protection underneath the framework's origin
+  check.
 - **Token rotation** on privilege change, to close session fixation.
 - **Generic failure messages.** "Invalid email or password", always — no user
   enumeration.
