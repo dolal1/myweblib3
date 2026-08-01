@@ -11,7 +11,7 @@ import { defineConfig } from "vitest/config";
 loadDotenv();
 
 /**
- * Integration tests point at the throwaway database on :5434 (compose service
+ * Integration tests point at the throwaway database on :15434 (compose service
  * `db-test`, tmpfs-backed), never at the dev database. Tests delete rows, and
  * doing that to the seeded demo data would be tedious at best.
  */

@@ -36,11 +36,14 @@ cp .env.example .env
 sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=\"$(openssl rand -base64 32)\"|" .env
 sed -i "s|^CRON_SECRET=.*|CRON_SECRET=\"$(openssl rand -base64 32)\"|" .env
 
-npm run db:up        # Postgres on :5433, throwaway test DB on :5434
 npm run db:migrate   # apply migrations
 npm run db:seed      # realistic demo library
 npm run dev
 ```
+
+Each of those starts the Postgres it needs and stops it again on the way out —
+see [Containers](#containers). There is no separate "bring the database up"
+step.
 
 Then open <http://localhost:3000>. `GET /api/health` round-trips to Postgres and
 returns 503 if the database is unreachable.
@@ -65,17 +68,49 @@ fine, a returned loan, a book with no ISBN and no cover, and a suspended member
 
 ## Scripts
 
-| Command                     | Does                       |
-| --------------------------- | -------------------------- |
-| `npm run dev`               | dev server                 |
-| `npm run build` / `start`   | production build and serve |
-| `npm run check`             | typecheck + lint + format  |
-| `npm test`                  | unit tests                 |
-| `npm run test:e2e`          | Playwright                 |
-| `npm run db:up` / `db:down` | Postgres containers        |
-| `npm run db:migrate`        | apply migrations           |
-| `npm run db:seed`           | reseed                     |
-| `npm run db:studio`         | Prisma Studio              |
+| Command                     | Does                         |
+| --------------------------- | ---------------------------- |
+| `npm run dev`               | dev server                   |
+| `npm run build` / `start`   | production build and serve   |
+| `npm run check`             | typecheck + lint + format    |
+| `npm test`                  | unit and integration tests   |
+| `npm run test:e2e`          | Playwright                   |
+| `npm run db:up` / `db:down` | Postgres containers, by hand |
+| `npm run db:migrate`        | apply migrations             |
+| `npm run db:seed`           | reseed                       |
+| `npm run db:studio`         | Prisma Studio                |
+
+### Containers
+
+The database is not a background service you leave running. Every script that
+needs Postgres goes through `scripts/with-db.sh`, which starts the container it
+needs, waits for the healthcheck, and stops it again when the command exits —
+so a checkout you are not currently working in holds no port and no memory.
+`restart: "no"` in `compose.yaml` keeps that true across a reboot.
+
+- `npm run dev` runs the dev database on :15433 for as long as the dev server
+  lives.
+- `npm test` runs the throwaway database on :15434. It is tmpfs-backed, so it
+  comes up empty and the wrapper replays the migrations into it first.
+- `npm run dev` and `npm test` **own** their container: ending them stops it,
+  even if something else had started it. Ending the dev server means you are
+  done, so the database goes with it.
+- The short commands — `db:migrate`, `db:seed`, `db:studio`, `db:reset` — do
+  not. A container that was already running is left alone, so running one of
+  them in a second terminal will not stop the database out from under a running
+  dev server.
+
+`npm run db:up` / `db:down` are still there for when you want to hold a
+database open across several commands — but note that a later `npm run dev`
+will stop it on the way out, by design.
+
+The host ports are `DB_PORT` (15433) and `DB_TEST_PORT` (15434) in `.env`,
+deliberately clear of 5432–5434 where other projects pile up. If one ever
+clashes anyway, change it there together with the port in the matching
+connection string; `compose.yaml` reads `.env` and needs no edit.
+
+Why it works this way:
+[ADR-005](docs/adr/005-on-demand-dev-containers.md).
 
 ### The daily job
 
@@ -100,6 +135,7 @@ Decisions are recorded in [docs/adr/](docs/adr/):
 - [002 — Hand-rolled sessions](docs/adr/002-hand-rolled-sessions.md)
 - [003 — Schema design](docs/adr/003-schema-design.md)
 - [004 — Dependency audit policy](docs/adr/004-dependency-audit-policy.md)
+- [005 — On-demand development containers](docs/adr/005-on-demand-dev-containers.md)
 
 Three points worth calling out:
 
