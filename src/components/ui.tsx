@@ -93,11 +93,14 @@ export function Pagination({
   pageCount,
   basePath,
   query,
+  smart = false,
 }: {
   page: number;
   pageCount: number;
   basePath: string;
   query?: string;
+  /** Carry the smart-search toggle across pages. */
+  smart?: boolean;
 }) {
   if (pageCount <= 1) return null;
 
@@ -105,6 +108,7 @@ export function Pagination({
     const params = new URLSearchParams();
     if (target > 1) params.set("page", String(target));
     if (query) params.set("q", query);
+    if (smart) params.set("ai", "1");
     const search = params.toString();
     return search ? `${basePath}?${search}` : basePath;
   };
@@ -142,20 +146,23 @@ export function SearchForm({
   action,
   defaultValue,
   placeholder,
+  smart,
 }: {
   action: string;
   defaultValue?: string;
   placeholder: string;
+  /** Offer the smart-search checkbox. Omitted when the feature is off. */
+  smart?: { checked: boolean };
 }) {
   return (
-    <form action={action} method="GET" className="mb-6 flex gap-2">
+    <form action={action} method="GET" className="mb-6 flex flex-wrap gap-2">
       <input
         type="search"
         name="q"
         defaultValue={defaultValue ?? ""}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+        className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
       />
       <button
         type="submit"
@@ -163,6 +170,18 @@ export function SearchForm({
       >
         Search
       </button>
+      {smart ? (
+        <label className="flex w-full items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+          <input
+            type="checkbox"
+            name="ai"
+            value="1"
+            defaultChecked={smart.checked}
+          />
+          Smart search: describe what you want, like “available books by Achebe
+          from the 1960s”
+        </label>
+      ) : null}
     </form>
   );
 }

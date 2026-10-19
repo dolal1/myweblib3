@@ -1,0 +1,27 @@
+name: Smart search eval
+
+# Replays the recorded API responses in evals/nl-search/recordings through the
+# production interpreter. No API key, no network, no cost. Fails if the prompt,
+# schema or model changed since the recordings were made, or if the pass rate
+# drops below the threshold in cases.json. See evals/nl-search/run.mts.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run eval:nl-search

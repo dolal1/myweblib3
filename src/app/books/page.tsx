@@ -11,8 +11,16 @@ import {
   SearchForm,
 } from "@/components/ui";
 import { getCurrentUser, hasRole } from "@/lib/auth/dal";
+import type { SessionUser } from "@/lib/auth/session";
+import { describeFilter } from "@/lib/catalogue/nl-search/filter";
+import {
+  explainFallback,
+  smartSearch,
+  smartSearchEnabled,
+} from "@/lib/catalogue/nl-search/service";
 import { PAGE_SIZE, listBooks } from "@/lib/catalogue/queries";
 import { hydrateBookHits, searchBooks } from "@/lib/catalogue/search";
+import { db } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Books" };
 
@@ -23,8 +31,17 @@ export const metadata: Metadata = { title: "Books" };
  * `q`, it becomes ranked full-text search over the generated tsvector columns,
  * which needs raw SQL — so the two paths are kept separate rather than bent
  * into one query that does neither well.
+ *
+ * Smart search is a third path, for signed-in members only: each search can
+ * cost money, and an anonymous visitor has no allowance to count against. It
+ * always ends in one of the other two kinds of result; see
+ * lib/catalogue/nl-search/service.ts.
  */
-async function loadBooks(page: number, query: string) {
+async function loadBooks(
+  page: number,
+  query: string,
+  smartFor: SessionUser | null,
+) {
   if (!query) {
     const listed = await listBooks({ page });
     return {
@@ -33,13 +50,48 @@ async function loadBooks(page: number, query: string) {
       pageCount: listed.pageCount,
       total: listed.total,
       fuzzy: false,
+      understood: null,
+      notice: null,
+    };
+  }
+
+  const offset = (Math.max(1, page) - 1) * PAGE_SIZE;
+
+  if (smartFor) {
+    const result = await smartSearch({
+      query,
+      userId: smartFor.id,
+      limit: PAGE_SIZE,
+      offset,
+    });
+
+    let understood: string[] | null = null;
+    if (result.mode === "ai") {
+      const genres = await db.genre.findMany({
+        select: { slug: true, name: true },
+      });
+      understood = describeFilter(
+        result.filter,
+        new Map(genres.map((g) => [g.slug, g.name])),
+      );
+    }
+
+    return {
+      items: await hydrateBookHits(result.hits),
+      page,
+      pageCount: Math.max(1, Math.ceil(result.total / PAGE_SIZE)),
+      total: result.total,
+      fuzzy: result.mode === "fallback" && result.usedFuzzyFallback,
+      understood,
+      notice:
+        result.mode === "fallback" ? explainFallback(result.reason) : null,
     };
   }
 
   const result = await searchBooks({
     query,
     limit: PAGE_SIZE,
-    offset: (Math.max(1, page) - 1) * PAGE_SIZE,
+    offset,
   });
 
   return {
@@ -48,22 +100,24 @@ async function loadBooks(page: number, query: string) {
     pageCount: Math.max(1, Math.ceil(result.total / PAGE_SIZE)),
     total: result.total,
     fuzzy: result.usedFuzzyFallback,
+    understood: null,
+    notice: null,
   };
 }
 
 export default async function BooksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; ai?: string }>;
 }) {
   const params = await searchParams;
   const page = Number(params.page ?? "1") || 1;
   const query = params.q?.trim() ?? "";
 
-  const [user, books] = await Promise.all([
-    getCurrentUser(),
-    loadBooks(page, query),
-  ]);
+  const user = await getCurrentUser();
+  const smartAvailable = user !== null && smartSearchEnabled();
+  const smart = smartAvailable && params.ai === "1";
+  const books = await loadBooks(page, query, smart ? user : null);
 
   const canManage = hasRole(user, "LIBRARIAN");
 
@@ -81,9 +135,27 @@ export default async function BooksPage({
         action="/books"
         defaultValue={query}
         placeholder="Search by title, author, or description"
+        {...(smartAvailable ? { smart: { checked: smart } } : {})}
       />
 
-      {query ? (
+      {books.understood ? (
+        <div className="mb-4 text-sm">
+          <p className="text-slate-500 dark:text-slate-400">
+            {books.total} {books.total === 1 ? "result" : "results"}. Smart
+            search read that as:
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-2" aria-label="Search filters">
+            {books.understood.map((label) => (
+              <li
+                key={label}
+                className="rounded-full border border-slate-300 px-3 py-0.5 dark:border-slate-700"
+              >
+                {label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : query ? (
         <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
           {books.fuzzy
             ? `Nothing matched “${query}” exactly — showing titles that look similar.`
@@ -91,6 +163,11 @@ export default async function BooksPage({
           <span className="text-xs">
             Quoted phrases and <code>-exclusions</code> work.
           </span>
+          {books.notice ? (
+            <span className="mt-1 block text-amber-700 dark:text-amber-400">
+              {books.notice}
+            </span>
+          ) : null}
         </p>
       ) : null}
 
@@ -145,6 +222,7 @@ export default async function BooksPage({
         pageCount={books.pageCount}
         basePath="/books"
         {...(query ? { query } : {})}
+        smart={smart}
       />
     </main>
   );

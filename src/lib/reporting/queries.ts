@@ -208,3 +208,73 @@ export async function getMembersOwing(limit = 10) {
     .sort((a, b) => b.owedCents - a.owedCents)
     .slice(0, limit);
 }
+
+export interface AiUsage {
+  searches: number;
+  answered: number;
+  cacheHits: number;
+  fallbacks: { reason: string; count: number }[];
+  /** Over calls that reached the API; cache hits are excluded. */
+  p50LatencyMs: number | null;
+  p95LatencyMs: number | null;
+  costMicroUsd: number;
+  costTodayMicroUsd: number;
+}
+
+/**
+ * Smart-search usage over the last `days` days, from the AiCall log.
+ * Percentiles come from Postgres rather than from rows pulled into JavaScript,
+ * like everything else in this file.
+ */
+export async function getAiUsage(
+  days: number,
+  now = new Date(),
+): Promise<AiUsage> {
+  const since = addDays(now, -days);
+  const today = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  const where = { feature: "nl-search", createdAt: { gte: since } };
+
+  const [byOutcome, byReason, latency, cost, costToday] = await Promise.all([
+    db.aiCall.groupBy({ by: ["outcome"], where, _count: { _all: true } }),
+    db.aiCall.groupBy({
+      by: ["failureReason"],
+      where: { ...where, outcome: "FALLBACK" },
+      _count: { _all: true },
+    }),
+    db.$queryRaw<{ p50: number | null; p95: number | null }[]>(Prisma.sql`
+      SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY "latencyMs") AS p50,
+             percentile_cont(0.95) WITHIN GROUP (ORDER BY "latencyMs") AS p95
+      FROM "AiCall"
+      WHERE feature = 'nl-search' AND "createdAt" >= ${since}
+        AND "latencyMs" IS NOT NULL
+    `),
+    db.aiCall.aggregate({ where, _sum: { costMicroUsd: true } }),
+    db.aiCall.aggregate({
+      where: { feature: "nl-search", createdAt: { gte: today } },
+      _sum: { costMicroUsd: true },
+    }),
+  ]);
+
+  const count = (outcome: string) =>
+    byOutcome.find((row) => row.outcome === outcome)?._count._all ?? 0;
+  const round = (value: number | null | undefined) =>
+    value === null || value === undefined ? null : Math.round(value);
+
+  return {
+    searches: byOutcome.reduce((sum, row) => sum + row._count._all, 0),
+    answered: count("OK"),
+    cacheHits: count("CACHE_HIT"),
+    fallbacks: byReason
+      .map((row) => ({
+        reason: row.failureReason ?? "unknown",
+        count: row._count._all,
+      }))
+      .sort((a, b) => b.count - a.count),
+    p50LatencyMs: round(latency[0]?.p50),
+    p95LatencyMs: round(latency[0]?.p95),
+    costMicroUsd: cost._sum.costMicroUsd ?? 0,
+    costTodayMicroUsd: costToday._sum.costMicroUsd ?? 0,
+  };
+}

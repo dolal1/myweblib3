@@ -57,6 +57,7 @@ model User {
   loansIssued   Loan[]         @relation("LoanIssuedBy")
   holds         Hold[]
   notifications Notification[]
+  aiCalls       AiCall[]
 
   @@index([role])
 }
@@ -352,4 +353,57 @@ model Notification {
 
   @@index([userId])
   @@index([sentAt])
+}
+
+// ---------------------------------------------------------------------------
+// AI usage
+// ---------------------------------------------------------------------------
+
+enum AiCallOutcome {
+  // The model answered and the filter passed validation.
+  OK
+  // Served from an earlier OK row for the same query; no API call, no cost.
+  CACHE_HIT
+  // Keyword search was used instead. failureReason says why.
+  FALLBACK
+}
+
+// One row per natural-language search, including the ones that never reached
+// the API (over budget, rate limited). This is the record behind the latency,
+// cost and fallback figures on the admin page, and the daily budget is
+// enforced by summing it.
+model AiCall {
+  id String @id @default(uuid(7))
+
+  // Which feature made the call, so a second AI feature does not need a
+  // second table.
+  feature String
+
+  userId String?
+  // SetNull: deleting a member must not delete the spend they caused.
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Lowercased and whitespace-collapsed (normalizeQuery), which is also the
+  // cache key.
+  normalizedQuery String
+  promptVersion   String
+
+  outcome       AiCallOutcome
+  failureReason String?
+
+  // Null when no request was sent.
+  model        String?
+  latencyMs    Int?
+  inputTokens  Int?
+  outputTokens Int?
+  // Integer micro-dollars; see src/lib/catalogue/nl-search/cost.ts.
+  costMicroUsd Int     @default(0)
+
+  // The validated CatalogueFilter, on OK rows. What a cache hit replays.
+  filter Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([feature, normalizedQuery, promptVersion, createdAt])
 }

@@ -4,7 +4,10 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth/dal";
 import { addDays, formatCents } from "@/lib/circulation/policy";
+import { formatMicroUsd } from "@/lib/catalogue/nl-search/cost";
+import { env } from "@/lib/env";
 import {
+  getAiUsage,
   getCopyStatusBreakdown,
   getLoansPerDay,
   getMembersOwing,
@@ -27,13 +30,16 @@ export default async function AdminPage() {
   await requireRole("ADMIN");
 
   const now = new Date();
-  const [overview, mostBorrowed, statuses, perDay, owing] = await Promise.all([
-    getOverview(now),
-    getMostBorrowed({ since: addDays(now, -30) }),
-    getCopyStatusBreakdown(),
-    getLoansPerDay(30),
-    getMembersOwing(),
-  ]);
+  const [overview, mostBorrowed, statuses, perDay, owing, ai] =
+    await Promise.all([
+      getOverview(now),
+      getMostBorrowed({ since: addDays(now, -30) }),
+      getCopyStatusBreakdown(),
+      getLoansPerDay(30),
+      getMembersOwing(),
+      getAiUsage(7, now),
+    ]);
+  const apiCalls = ai.searches - ai.cacheHits;
 
   const peak = Math.max(1, ...perDay.map((d) => d.count));
 
@@ -171,6 +177,58 @@ export default async function AdminPage() {
           is a deliberate no-op; see the note in{" "}
           <code>lib/notifications/service.ts</code>.
         </p>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold">Smart search</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Last 7 days · from the <code>AiCall</code> log ·{" "}
+          {formatMicroUsd(ai.costTodayMicroUsd)} of{" "}
+          {formatMicroUsd(env.AI_DAILY_BUDGET_USD * 1_000_000)} daily budget
+          spent today
+        </p>
+        <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Searches" value={ai.searches} />
+          <Stat
+            label="Cache hits"
+            value={
+              ai.searches > 0
+                ? `${Math.round((ai.cacheHits / ai.searches) * 100)}%`
+                : "—"
+            }
+          />
+          <Stat
+            label="Fell back"
+            value={ai.searches - ai.answered - ai.cacheHits}
+            tone={
+              ai.searches > 0 &&
+              (ai.searches - ai.answered - ai.cacheHits) / ai.searches > 0.2
+                ? "warn"
+                : "normal"
+            }
+          />
+          <Stat label="Cost" value={formatMicroUsd(ai.costMicroUsd)} />
+          <Stat
+            label="p50 latency"
+            value={ai.p50LatencyMs === null ? "—" : `${ai.p50LatencyMs} ms`}
+          />
+          <Stat
+            label="p95 latency"
+            value={ai.p95LatencyMs === null ? "—" : `${ai.p95LatencyMs} ms`}
+          />
+          <Stat
+            label="Per API call"
+            value={
+              apiCalls > 0 ? formatMicroUsd(ai.costMicroUsd / apiCalls) : "—"
+            }
+          />
+        </dl>
+        {ai.fallbacks.length > 0 ? (
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+            Fallbacks:{" "}
+            {ai.fallbacks.map((f) => `${f.reason} ${f.count}`).join(" · ")}
+          </p>
+        ) : null}
       </section>
     </main>
   );

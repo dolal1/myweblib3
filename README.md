@@ -75,6 +75,7 @@ fine, a returned loan, a book with no ISBN and no cover, and a suspended member
 | `npm run check`             | typecheck + lint + format    |
 | `npm test`                  | unit and integration tests   |
 | `npm run test:e2e`          | Playwright                   |
+| `npm run eval:nl-search`    | smart-search eval (replayed) |
 | `npm run db:up` / `db:down` | Postgres containers, by hand |
 | `npm run db:migrate`        | apply migrations             |
 | `npm run db:seed`           | reseed                       |
@@ -127,6 +128,82 @@ notifying twice — and it is the one endpoint in the app that needs its own aut
 because route handlers get none of the `Origin` checking Next.js applies to
 Server Actions.
 
+## Smart search
+
+Signed-in members can tick **Smart search** and type what they want in plain
+words: "available books by Achebe from the 1960s". Claude Haiku 5.5 turns the
+sentence into a filter (author, genre, year range, available now, topic words).
+The page shows that filter as labels above the results, so a wrong reading is
+visible. The design and the alternatives are in
+[ADR-006](docs/adr/006-natural-language-search.md); the code is in
+[`src/lib/catalogue/nl-search/`](src/lib/catalogue/nl-search/).
+
+It is optional. Without `ANTHROPIC_API_KEY` in `.env` the checkbox is not
+shown and search works as before.
+
+**The model only fills in a filter.** It never sees the database, writes
+SQL, or names a book. Fixed SQL runs the filter with every value bound as a
+parameter, so the worst a hostile query can do is fill in filter fields.
+
+**What happens when it goes wrong.** Every outcome is typed and every failure
+ends in the keyword search, with one line telling the member why:
+
+| Situation                                        | Result                                   |
+| ------------------------------------------------ | ---------------------------------------- |
+| No answer within 2.5 s (one retry)               | `timeout` → keyword search               |
+| 429, 5xx, connection failure                     | `rate_limited` / `unavailable` → keyword |
+| Bad or revoked key                               | `misconfigured` → keyword                |
+| Refusal, or output cut off at `max_tokens`       | `refused` / `truncated` → keyword        |
+| Not JSON, wrong shape, a genre the library lacks | `invalid_output` → keyword               |
+| Years backwards or implausible                   | `implausible` → keyword (never "fixed")  |
+| "Hello", "what's the weather", an injection      | `not_a_search` → keyword                 |
+| Today's spend reached `AI_DAILY_BUDGET_USD`      | `over_budget` → keyword, no API call     |
+| Member over 30 smart searches this hour          | `member_rate_limited` → keyword          |
+
+**Latency and cost.** Each search writes an `AiCall` row: outcome, reason,
+latency, input and output tokens, and cost in micro-dollars computed from the
+usage the API reports. Failed calls that were still billed are included. The
+same row drives the daily budget and a 24-hour cache of the same query (cost
+$0), and the **Smart search** panel on `/admin` shows searches, cache hit rate,
+fallbacks by reason, p50/p95 latency and cost. A JSON line per search also goes
+to stdout, without the query text.
+
+### How it was verified
+
+1. **Eval, 20 cases, in CI.** [`evals/nl-search/cases.json`](evals/nl-search/cases.json)
+   covers authors, genres, open and closed year ranges ("after 1990" means
+   1991), availability, a bare title, filler words, a French query, a
+   misspelt author who must be kept as typed, an unlisted genre, two prompt
+   injections and two non-searches. Each field is graded on its own. A
+   constraint the member never asked for is a failure, because it hides
+   books. The run fails below 90%.
+
+   `npm run eval:nl-search -- --record` runs the cases against the real API
+   and saves each exchange in `evals/nl-search/recordings/`. CI then runs
+   `npm run eval:nl-search`, which replays them through the same production
+   code. A recording is served only if the request is byte-identical, so
+   changing the prompt, schema or model fails CI until the cases are
+   re-recorded against the real model. Results, latency and cost from the
+   last recorded run are in
+   [`evals/nl-search/RESULTS.md`](evals/nl-search/RESULTS.md).
+
+2. **Failure paths, through the real SDK.** `tests/nl-search-interpret.test.ts`
+   replaces only `fetch`, so the SDK's own retry and error handling run for
+   real: an overload retried once and then succeeding, a 500 giving up after
+   one retry, 429, 401 without a retry, a hung connection hitting the timeout,
+   a refusal, truncation, non-JSON, an invented genre, and a backwards range.
+
+3. **Service and SQL, against Postgres.** `tests/nl-search.integration.test.ts`
+   checks the combined filters (including a misspelt author still matching),
+   the cache, the budget (including the UTC day boundary), the hourly
+   allowance, that a billed rejection is charged, and that every path writes
+   the right `AiCall` row.
+
+4. **End to end, once, by hand.** A production build served the page with a
+   deliberately invalid key. The live API answered 401, the page showed the
+   "unavailable" line with keyword results, and the `AiCall` row and log line
+   recorded the `misconfigured` fallback and its latency.
+
 ## Architecture notes
 
 Decisions are recorded in [docs/adr/](docs/adr/):
@@ -136,6 +213,7 @@ Decisions are recorded in [docs/adr/](docs/adr/):
 - [003 — Schema design](docs/adr/003-schema-design.md)
 - [004 — Dependency audit policy](docs/adr/004-dependency-audit-policy.md)
 - [005 — On-demand development containers](docs/adr/005-on-demand-dev-containers.md)
+- [006 — Natural-language search](docs/adr/006-natural-language-search.md)
 
 Three points worth calling out:
 
@@ -168,4 +246,6 @@ Under construction.
       Library metadata
 - [x] Notifications and reporting — idempotent daily job, admin dashboard
 - [x] Cover images — real uploads, content-addressed storage, immutable URLs
+- [x] Smart search — natural-language queries via Claude, with fallback,
+      cost log, daily budget and a recorded eval
 - [ ] Tests, CI, deploy

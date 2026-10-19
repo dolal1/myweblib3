@@ -40,6 +40,18 @@ const EnvSchema = z.object({
   APP_URL: z.url().default("http://localhost:3000"),
 
   UPLOAD_DIR: z.string().default("./uploads"),
+
+  // Natural-language search. Optional: without a key the search box offers
+  // keyword search only, so a fresh clone still runs with no account anywhere.
+  // An empty string counts as unset, which is what `KEY=""` in .env means.
+  ANTHROPIC_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value : undefined)),
+
+  // Hard ceiling on AI spend per UTC day, in US dollars. Once reached, every
+  // search is keyword search until midnight. 0 switches the feature off.
+  AI_DAILY_BUDGET_USD: z.coerce.number().nonnegative().default(1),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
