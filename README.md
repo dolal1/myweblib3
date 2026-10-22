@@ -179,13 +179,18 @@ to stdout, without the query text.
    books. The run fails below 90%.
 
    `npm run eval:nl-search -- --record` runs the cases against the real API
-   and saves each exchange in `evals/nl-search/recordings/`. CI then runs
-   `npm run eval:nl-search`, which replays them through the same production
-   code. A recording is served only if the request is byte-identical, so
-   changing the prompt, schema or model fails CI until the cases are
-   re-recorded against the real model. Results, latency and cost from the
-   last recorded run are in
-   [`evals/nl-search/RESULTS.md`](evals/nl-search/RESULTS.md).
+   and saves each exchange in `evals/nl-search/recordings/`. Running
+   `npm run eval:nl-search` replays them through the same production code. A
+   recording is served only if the request is byte-identical, so changing the
+   prompt, schema or model fails the replay until the cases are re-recorded
+   against the real model. The recording run also writes results, latency and
+   cost to `evals/nl-search/RESULTS.md`.
+
+   **Status:** the cases and the record/replay runner are in place, and the
+   replay was checked by faking one recording and confirming that a one-space
+   prompt change makes it fail. The live recording has not been made yet, so
+   the GitHub Actions job runs only on manual trigger for now. It moves back
+   to every push once the recordings are committed.
 
 2. **Failure paths, through the real SDK.** `tests/nl-search-interpret.test.ts`
    replaces only `fetch`, so the SDK's own retry and error handling run for

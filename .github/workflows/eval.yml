@@ -5,10 +5,12 @@ name: Smart search eval
 # schema or model changed since the recordings were made, or if the pass rate
 # drops below the threshold in cases.json. See evals/nl-search/run.mts.
 
+# Manual only until the live recordings are committed (see the README's
+# "How it was verified"). With no recordings every case is "missing", so on
+# push it could only ever fail. Restore the push and pull_request triggers
+# in the same commit as the recordings.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
