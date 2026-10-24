@@ -155,9 +155,9 @@ describe("attachCover", () => {
 
     expect(second.data.storageKey).not.toBe(first.data.storageKey);
     // One Cover row per book — the schema has a unique index on bookId.
-    await expect(
-      db.cover.count({ where: { bookId: book.id } }),
-    ).resolves.toBe(1);
+    await expect(db.cover.count({ where: { bookId: book.id } })).resolves.toBe(
+      1,
+    );
     // The superseded file is gone.
     await expect(getCover(first.data.storageKey)).resolves.toBeNull();
     await expect(getCover(second.data.storageKey)).resolves.not.toBeNull();
@@ -185,9 +185,9 @@ describe("attachCover", () => {
     const result = await attachCover(book.id, Buffer.from("#!/bin/sh\n"));
 
     expect(result.ok).toBe(false);
-    await expect(
-      db.cover.count({ where: { bookId: book.id } }),
-    ).resolves.toBe(0);
+    await expect(db.cover.count({ where: { bookId: book.id } })).resolves.toBe(
+      0,
+    );
   });
 
   it("is removed when the book is deleted", async () => {
@@ -198,9 +198,9 @@ describe("attachCover", () => {
     await db.bookAuthor.deleteMany({ where: { bookId: book.id } });
     await db.book.delete({ where: { id: book.id } });
 
-    await expect(
-      db.cover.count({ where: { bookId: book.id } }),
-    ).resolves.toBe(0);
+    await expect(db.cover.count({ where: { bookId: book.id } })).resolves.toBe(
+      0,
+    );
   });
 });
 
@@ -220,9 +220,9 @@ describe("importCoverFromUrl", () => {
     );
 
     expect(result.ok).toBe(true);
-    await expect(
-      db.cover.count({ where: { bookId: book.id } }),
-    ).resolves.toBe(1);
+    await expect(db.cover.count({ where: { bookId: book.id } })).resolves.toBe(
+      1,
+    );
   });
 
   it("refuses http, and refuses to fetch a private address", async () => {
@@ -275,8 +275,8 @@ describe("importCoverFromUrl", () => {
     );
     expect(notOk.ok).toBe(false);
 
-    await expect(
-      db.cover.count({ where: { bookId: book.id } }),
-    ).resolves.toBe(0);
+    await expect(db.cover.count({ where: { bookId: book.id } })).resolves.toBe(
+      0,
+    );
   });
 });
