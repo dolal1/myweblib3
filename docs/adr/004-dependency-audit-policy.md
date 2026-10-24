@@ -33,12 +33,20 @@ with an `overrides` entry rather than left alone. Currently:
 ```json
 "overrides": {
   "postcss": "^8.5.25",
-  "sharp": "^0.35.3"
+  "sharp": "^0.35.5"
 }
 ```
 
 Both are reachable from the production bundle, so both matter. This took the
 scaffold from 12 high advisories to 6, all of them dev-only.
+
+**2026-10-24:** ten production advisories published since August (Next,
+Prisma's `deepmerge-ts` and `mysql2`, sharp, zod, nanoid, source-map-js,
+fast-uri) were cleared by upgrading Next to 16.4.3, Prisma to 7.10.1 and zod to
+4.6.7, raising the sharp override to `^0.35.5` (the advisory covers everything
+up to 0.35.5-rc.1), and `npm audit fix` for the rest. Vitest moved to 4.1.12 for
+a dev-only `@vitest/mocker` advisory. `npm audit` now reports zero, dev
+included.
 
 **ESLint 10 was tried as a route to the remaining six and reverted.** Its peer
 range on `eslint-config-next@16.2.12` is `>=9.0.0` and it does move to
@@ -60,11 +68,12 @@ stop; dev advisories are visible and reviewed, not silently suppressed.
 
 ## Current accepted exceptions
 
-| Advisory                                | Path                                                          | Why accepted                                                                                                                                 |
-| --------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| GHSA-mh99-v99m-4gvg (`brace-expansion`) | `eslint-config-next` → `eslint-plugin-import` → `minimatch@3` | Dev-only. Patched version is incompatible with `minimatch@3`'s API. Resolves when `eslint-plugin-import` updates its `minimatch` dependency. |
+None. The `brace-expansion` advisory (GHSA-mh99-v99m-4gvg) that was listed
+here, dev-only through `eslint-config-next` → `eslint-plugin-import` →
+`minimatch@3`, no longer appears in `npm audit` as of 2026-10-24.
 
-Review this table whenever `npm audit` output changes.
+Add a row here (advisory, path, why accepted) whenever an advisory has to be
+left in place, and review this section whenever `npm audit` output changes.
 
 ## Also adopted
 
