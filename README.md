@@ -1,5 +1,7 @@
 # myweblib3
 
+![CI](https://github.com/dolal1/myweblib3/actions/workflows/ci.yml/badge.svg)
+
 A library catalogue and circulation system: books, authors, physical copies,
 lending, holds, and fines.
 
@@ -52,14 +54,14 @@ returns 503 if the database is unreachable.
 
 All use the password `correct-horse-battery-staple`.
 
-| Email                     | Role      | State                        |
-| ------------------------- | --------- | ---------------------------- |
-| `admin@myweblib.test`     | ADMIN     | —                            |
-| `librarian@myweblib.test` | LIBRARIAN | issued the seeded loans      |
-| `ada@myweblib.test`       | MEMBER    | two active loans             |
-| `brian@myweblib.test`     | MEMBER    | one overdue loan with a fine |
-| `chidi@myweblib.test`     | MEMBER    | one returned loan, one hold  |
-| `dana@myweblib.test`      | MEMBER    | suspended                    |
+| Email                     | Role      | State                                   |
+| ------------------------- | --------- | --------------------------------------- |
+| `admin@myweblib.test`     | ADMIN     | —                                       |
+| `librarian@myweblib.test` | LIBRARIAN | issued the seeded loans                 |
+| `ada@myweblib.test`       | MEMBER    | two active loans                        |
+| `brian@myweblib.test`     | MEMBER    | one overdue loan with a fine            |
+| `chidi@myweblib.test`     | MEMBER    | one active, one returned loan, one hold |
+| `dana@myweblib.test`      | MEMBER    | suspended                               |
 
 The seed is shaped rather than bulky: it deliberately contains a co-authored
 book, a fully-loaned title with a two-deep hold queue, an overdue loan with a
@@ -68,18 +70,18 @@ fine, a returned loan, a book with no ISBN and no cover, and a suspended member
 
 ## Scripts
 
-| Command                     | Does                         |
-| --------------------------- | ---------------------------- |
-| `npm run dev`               | dev server                   |
-| `npm run build` / `start`   | production build and serve   |
-| `npm run check`             | typecheck + lint + format    |
-| `npm test`                  | unit and integration tests   |
-| `npm run test:e2e`          | Playwright                   |
-| `npm run eval:nl-search`    | smart-search eval (replayed) |
-| `npm run db:up` / `db:down` | Postgres containers, by hand |
-| `npm run db:migrate`        | apply migrations             |
-| `npm run db:seed`           | reseed                       |
-| `npm run db:studio`         | Prisma Studio                |
+| Command                     | Does                                                                   |
+| --------------------------- | ---------------------------------------------------------------------- |
+| `npm run dev`               | dev server                                                             |
+| `npm run build` / `start`   | production build and serve                                             |
+| `npm run check`             | typecheck + lint + format                                              |
+| `npm test`                  | unit and integration tests                                             |
+| `npm run test:e2e`          | Playwright, against a production build on :3100 and the test database  |
+| `npm run eval:nl-search`    | smart-search eval (replayed; fails until the recordings are committed) |
+| `npm run db:up` / `db:down` | Postgres containers, by hand                                           |
+| `npm run db:migrate`        | apply migrations                                                       |
+| `npm run db:seed`           | reseed                                                                 |
+| `npm run db:studio`         | Prisma Studio                                                          |
 
 ### Containers
 
@@ -253,4 +255,6 @@ Under construction.
 - [x] Cover images — real uploads, content-addressed storage, immutable URLs
 - [x] Smart search — natural-language queries via Claude, with fallback,
       cost log, daily budget and a recorded eval
-- [ ] Tests, CI, deploy
+- [x] Tests and CI — typecheck, lint, unit and integration tests, production
+      audit, build and Playwright on every push and pull request
+- [ ] Deploy
