@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
 import { config as loadDotenv } from "dotenv";
 
@@ -11,9 +13,17 @@ import { config as loadDotenv } from "dotenv";
  * web server inherits this process's environment, and .env's
  * NODE_ENV="development" would then reach `next build`, which fails to
  * prerender with a development NODE_ENV. Next reads .env itself anyway.
+ *
+ * The path is resolved from this file, not the working directory: the VS Code
+ * Playwright extension loads the config from the workspace folder, which may
+ * be a parent of this repo, where there is no .env.
  */
 const dotenv: Record<string, string> = {};
-loadDotenv({ processEnv: dotenv, quiet: true });
+loadDotenv({
+  path: path.resolve(__dirname, ".env"),
+  processEnv: dotenv,
+  quiet: true,
+});
 
 const testDatabaseUrl =
   process.env["TEST_DATABASE_URL"] ?? dotenv["TEST_DATABASE_URL"];
